@@ -1,0 +1,48 @@
+{
+  "project": "crypto-intelligence-os",
+  "version": "0.1",
+  "status": "bootstrap_activated",
+  "interface": "telegram_first",
+  "autonomous_trading": false,
+  "target_alerts_per_day": 10,
+  "style": "degen_early_discovery",
+  "coverage": [
+    "tokens",
+    "memecoins",
+    "defi",
+    "nft",
+    "launchpads",
+    "protocols",
+    "chains",
+    "wallets",
+    "narratives",
+    "security",
+    "social",
+    "news"
+  ],
+  "initial_chain_seed": [
+    "ethereum",
+    "solana",
+    "base",
+    "bnb",
+    "tron",
+    "arbitrum",
+    "hyperliquid",
+    "monad",
+    "sui",
+    "avalanche"
+  ],
+  "primary_data_sources": [
+    "defillama",
+    "dexscreener",
+    "coingecko"
+  ],
+  "priority_onchain": [
+    "helius",
+    "alchemy"
+  ],
+  "optional_wallet_intelligence": [
+    "nansen"
+  ],
+  "next_action": "Implement P0 foundation in Antigravity after repository creation."
+}

@@ -1,0 +1,41 @@
+# Source registry — providers can be enabled/disabled without changing core logic.
+
+market:
+  coingecko:
+    enabled: true
+  binance_public:
+    enabled: true
+
+defi:
+  defillama:
+    enabled: true
+
+dex:
+  dexscreener:
+    enabled: true
+
+solana:
+  helius:
+    enabled: false   # enable after API key is configured
+
+evm:
+  alchemy:
+    enabled: false   # enable after API key is configured
+
+wallet_intelligence:
+  nansen:
+    enabled: false   # optional paid provider
+
+social:
+  telegram:
+    enabled: false   # enable after source/account design is finalized
+  x:
+    enabled: false
+
+news:
+  generic_web_research:
+    enabled: true
+
+notifications:
+  telegram:
+    enabled: false   # enable after BOT_TOKEN and CHAT_ID are configured
