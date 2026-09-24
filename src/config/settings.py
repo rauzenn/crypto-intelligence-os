@@ -3,6 +3,11 @@ from typing import List
 import yaml
 
 class Settings(BaseSettings):
+    # Environment
+    APP_ENV: str = "development"
+    LOG_LEVEL: str = "INFO"
+    ENV: str = "development"
+    
     # Database
     DATABASE_URL: str = "postgresql+asyncpg://postgres:postgres@localhost:5432/crypto_os"
     
@@ -12,9 +17,6 @@ class Settings(BaseSettings):
     # Telegram
     TELEGRAM_BOT_TOKEN: str = ""
     TELEGRAM_CHAT_ID: str = ""
-    
-    # Environment
-    ENV: str = "development"
     
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
