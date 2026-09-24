@@ -1,0 +1,44 @@
+services:
+  - type: web
+    name: crypto-os-api
+    env: docker
+    plan: starter
+    healthCheckPath: /health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crypto-os-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: crypto-os-cache
+          property: connectionString
+      - key: APP_ENV
+        value: production
+
+  - type: worker
+    name: crypto-os-worker
+    env: docker
+    plan: starter
+    dockerCommand: arq src.worker.settings.WorkerSettings
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: crypto-os-db
+          property: connectionString
+      - key: REDIS_URL
+        fromService:
+          type: redis
+          name: crypto-os-cache
+          property: connectionString
+
+databases:
+  - name: crypto-os-db
+    plan: starter
+    databaseName: crypto_intelligence
+    user: postgres
+
+redis:
+  - name: crypto-os-cache
+    plan: starter
