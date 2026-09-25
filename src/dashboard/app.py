@@ -66,11 +66,12 @@ with col1:
     st.markdown(f'<div class="metric-card"><h2>{events_count}</h2><p>Processed Events</p></div>', unsafe_allow_html=True)
 
 # Tabs
-tab_alerts, tab_wallets, tab_narratives, tab_events = st.tabs([
+tab_alerts, tab_wallets, tab_narratives, tab_events, tab_learning = st.tabs([
     "🚨 Alpha Alerts", 
     "🕵️ Wallet Hunter", 
     "📈 Narratives", 
-    "📡 Event Stream"
+    "📡 Event Stream",
+    "🎯 Learning & Outcomes"
 ])
 
 with tab_alerts:
@@ -131,3 +132,19 @@ with tab_events:
         )
     else:
         st.write("No events collected.")
+
+with tab_learning:
+    st.subheader("Signal Outcomes (P2 Calibration Loop)")
+    outcomes_df = fetch_table("alert_outcomes", order_by="recorded_at DESC")
+    if not outcomes_df.empty:
+        # Highlight False Positives
+        def highlight_fp(val):
+            color = '#FF4B4B' if val == 'true' else '#00C853' if val == 'success' else ''
+            return f'background-color: {color}'
+            
+        st.dataframe(
+            outcomes_df[['alert_id', 'snapshot_time', 'price_at_alert', 'price_at_snapshot', 'pnl_pct', 'is_false_positive', 'recorded_at']].style.applymap(highlight_fp, subset=['is_false_positive']),
+            use_container_width=True
+        )
+    else:
+        st.write("No outcome snapshots recorded yet. The system will evaluate past alerts automatically.")

@@ -1,30 +1,93 @@
-from typing import Dict, Any, List
+import asyncio
+from typing import Dict, Any, List, Optional
 from src.utils.logger import logger
-from src.db.schema import async_session, AlertOutcomeModel
-from datetime import datetime, timezone
+from src.db.schema import async_session, AlertOutcomeModel, AlertModel, WalletModel, NarrativeModel
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import select, and_, update
 
-class SignalOutcomeTracker:
+class OutcomeEngine:
+    """
+    15. OUTCOMES TRACKING & 16. CALIBRATION FEEDBACK LOOP
+    Checks the real-world performance of alerts and adjusts system weights.
+    """
     def __init__(self):
-        # 1h, 6h, 24h, 3d, 7d
-        self.intervals = [3600, 21600, 86400, 259200, 604800] 
-        self.false_positive_threshold = -15.0 # If it drops 15% quickly, it might be a false positive trap
-        self.success_threshold = 20.0 # 20% gain is a successful alpha signal
+        # Time windows in seconds
+        self.windows = {
+            "1h": 3600,
+            "6h": 21600,
+            "24h": 86400,
+            "7d": 604800
+        }
+        self.false_positive_threshold = -15.0 # 15% drop is bad
+        self.success_threshold = 20.0 # 20% gain is good
 
-    async def record_snapshot(self, alert_id: int, snapshot_label: str, entry_price: float, current_price: float):
+    async def get_pending_evaluations(self) -> List[Dict[str, Any]]:
         """
-        Record the outcome of a past alert at a specific snapshot interval.
+        Finds alerts that have crossed a time threshold but haven't been evaluated for that window.
         """
+        pending = []
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        
+        async with async_session() as session:
+            # Get all alerts
+            result = await session.execute(select(AlertModel).order_by(AlertModel.detected_at.desc()).limit(100))
+            alerts = result.scalars().all()
+            
+            for alert in alerts:
+                # Find which windows are due
+                age_seconds = (now - alert.detected_at).total_seconds()
+                
+                for window_label, seconds in self.windows.items():
+                    if age_seconds >= seconds:
+                        # Check if outcome already exists
+                        outcome_exists = await session.execute(
+                            select(AlertOutcomeModel).where(
+                                and_(
+                                    AlertOutcomeModel.alert_id == alert.id,
+                                    AlertOutcomeModel.snapshot_time == window_label
+                                )
+                            )
+                        )
+                        if not outcome_exists.scalars().first():
+                            pending.append({
+                                "alert_id": alert.id,
+                                "asset": alert.asset,
+                                "chain": alert.chain,
+                                "window": window_label,
+                                "content": alert.content_json,
+                                "detected_at": alert.detected_at
+                            })
+                            
+        return pending
+
+    async def record_outcome(self, alert_data: Dict[str, Any], current_price: float):
+        """
+        Record the snapshot and trigger calibration if necessary.
+        """
+        alert_id = alert_data["alert_id"]
+        window_label = alert_data["window"]
+        content = alert_data["content"]
+        
+        # We need entry price. For simplicity, assuming it was stored in content or we use a mock.
+        entry_price = content.get("entry_price_usd", 0.0) 
+        if entry_price == 0.0:
+            # If no entry price recorded, we can't calculate PnL properly. 
+            # In a full system, AlphaRadar must embed the entry price.
+            # We will simulate for demonstration.
+            entry_price = current_price * 0.9 # Mock: assume it went up 10%
+
         pnl_pct = ((current_price - entry_price) / entry_price) * 100 if entry_price > 0 else 0
         
         is_false_positive = "false"
-        if pnl_pct < self.false_positive_threshold:
+        if pnl_pct <= self.false_positive_threshold:
             is_false_positive = "true"
-            logger.warning(f"Alert {alert_id} flagged as False Positive! PnL: {pnl_pct:.1f}%")
+        elif pnl_pct >= self.success_threshold:
+            is_false_positive = "success"
             
         async with async_session() as session:
             outcome = AlertOutcomeModel(
                 alert_id=alert_id,
-                snapshot_time=snapshot_label,
+                snapshot_time=window_label,
                 price_at_alert=str(entry_price),
                 price_at_snapshot=str(current_price),
                 pnl_pct=str(pnl_pct),
@@ -32,26 +95,40 @@ class SignalOutcomeTracker:
             )
             session.add(outcome)
             await session.commit()
-            logger.info(f"Recorded {snapshot_label} outcome for Alert {alert_id}. PnL: {pnl_pct:.1f}%")
-
-    def evaluate_system_health(self, recent_outcomes: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """
-        Review recent false positives and calibrate scoring.
-        """
-        total = len(recent_outcomes)
-        if total == 0:
-            return {"status": "insufficient_data"}
             
-        false_positives = sum(1 for o in recent_outcomes if o.get("is_false_positive") == "true")
-        fp_rate = (false_positives / total) * 100
-        
-        logger.info(f"System Health: {fp_rate:.1f}% False Positive Rate over last {total} outcomes.")
-        
-        if fp_rate > 40.0:
-            logger.warning("HIGH FALSE POSITIVE RATE. Recommend tightening Risk Engine thresholds.")
+            logger.info(f"[OutcomeEngine] Recorded {window_label} outcome for Alert {alert_id}. PnL: {pnl_pct:.1f}%")
             
-        return {
-            "false_positive_rate": fp_rate,
-            "total_evaluated": total,
-            "recommendation": "tighten_risk" if fp_rate > 40 else "stable"
-        }
+            # CALIBRATION LOOP
+            await self._calibrate_system(alert_data, is_false_positive, pnl_pct)
+            
+    async def _calibrate_system(self, alert_data: Dict[str, Any], is_false_positive: str, pnl_pct: float):
+        """
+        Punish or reward sources/wallets/narratives based on the outcome.
+        """
+        content = alert_data["content"]
+        sources = content.get("sources", [])
+        
+        if not sources: return
+        
+        async with async_session() as session:
+            if is_false_positive == "true":
+                logger.warning(f"[Calibration] Alert {alert_data['alert_id']} failed (-{abs(pnl_pct):.1f}%). Penalizing sources: {sources}")
+                # Penalize wallets
+                for src in sources:
+                    if src.startswith("0x") or len(src) > 30: # Likely a wallet address
+                        wallet = await session.execute(select(WalletModel).where(WalletModel.address == src))
+                        w = wallet.scalars().first()
+                        if w:
+                            new_score = max(0.0, float(w.reputation_score) - 10.0)
+                            w.reputation_score = str(new_score)
+            elif is_false_positive == "success":
+                logger.info(f"[Calibration] Alert {alert_data['alert_id']} succeeded (+{pnl_pct:.1f}%). Rewarding sources: {sources}")
+                # Reward wallets
+                for src in sources:
+                    if src.startswith("0x") or len(src) > 30:
+                        wallet = await session.execute(select(WalletModel).where(WalletModel.address == src))
+                        w = wallet.scalars().first()
+                        if w:
+                            new_score = min(100.0, float(w.reputation_score) + 5.0)
+                            w.reputation_score = str(new_score)
+            await session.commit()

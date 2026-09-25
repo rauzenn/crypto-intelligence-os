@@ -6,7 +6,7 @@ import os
 from src.config.settings import settings
 
 def get_utc_now():
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 Base = declarative_base()
 

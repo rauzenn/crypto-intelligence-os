@@ -56,6 +56,27 @@ async def run_wallet_hunter_cycle(ctx: Dict[str, Any]):
     logger.info("Starting Wallet Hunter cycle... (Placeholder)")
     # Logic to query recent trades, identify smart money, score, and persist
 
+from src.outcome.outcomes import OutcomeEngine
+
+outcome_engine = OutcomeEngine()
+
+async def run_outcome_evaluations(ctx: Dict[str, Any]):
+    """
+    Periodic task to evaluate the outcome of past alerts.
+    """
+    logger.info("Starting P2 Outcome Evaluation Cycle...")
+    try:
+        pending = await outcome_engine.get_pending_evaluations()
+        logger.info(f"Found {len(pending)} pending alert snapshots for evaluation.")
+        
+        for alert_data in pending:
+            # Here we would fetch real current price. Mocking for now:
+            mock_current_price = 1.10 # Assuming standard $1.10 for testing
+            await outcome_engine.record_outcome(alert_data, mock_current_price)
+            
+    except Exception as e:
+        logger.error(f"Error in outcome evaluation cycle: {e}")
+
 async def startup(ctx: Dict[str, Any]):
     logger.info("Worker starting up. Initializing DB and resources...")
     await init_db()

@@ -1,10 +1,9 @@
 from arq.connections import RedisSettings
 from arq.cron import cron
 from src.config.settings import settings
-from src.worker.tasks import run_ingestion_cycle, run_wallet_hunter_cycle, startup, shutdown
-
-# Parse Redis URL for ARQ settings
+from src.worker.tasks import run_ingestion_cycle, run_wallet_hunter_cycle, run_outcome_evaluations, startup, shutdown
 import urllib.parse
+
 parsed_url = urllib.parse.urlparse(settings.REDIS_URL)
 
 redis_settings = RedisSettings(
@@ -25,7 +24,7 @@ class WorkerSettings:
     on_shutdown = shutdown
     
     # Tasks that can be queued dynamically
-    functions = [run_ingestion_cycle, run_wallet_hunter_cycle]
+    functions = [run_ingestion_cycle, run_wallet_hunter_cycle, run_outcome_evaluations]
     
     # Cron jobs that run automatically
     cron_jobs = [
@@ -33,5 +32,8 @@ class WorkerSettings:
         cron(run_ingestion_cycle, minute=set(range(0, 60, 5))),
         
         # Run Wallet Hunter once an hour
-        cron(run_wallet_hunter_cycle, minute=0)
+        cron(run_wallet_hunter_cycle, minute=0),
+        
+        # P2: Check alert outcomes every 15 minutes
+        cron(run_outcome_evaluations, minute=set(range(0, 60, 15)))
     ]
