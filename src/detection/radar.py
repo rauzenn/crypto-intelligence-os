@@ -50,8 +50,13 @@ class AlphaRadar:
         
         # 3. Evaluate Risk
         contract_analysis = context_data.get("contract_analysis", {})
-        risk_flags = self.risk.evaluate(event, contract_analysis)
-        risk_penalty = 0.5 if risk_flags else 0.0 # Basic risk penalty
+        risk_profile = self.risk.evaluate(event, contract_analysis)
+        
+        if risk_profile.category.value == "CRITICAL":
+            logger.warning(f"Alert BLOCKED due to CRITICAL risk on {event.asset}: {risk_profile.flags}")
+            return None
+            
+        risk_penalty = risk_profile.overall_risk_score / 100.0 # 0.0 to 1.0 penalty
         
         # 4. Generate Signal Object
         score_comps = CompositeScore(
@@ -61,7 +66,7 @@ class AlphaRadar:
             wallet_quality=context_data.get("wallet_quality", 0.0),
             narrative_velocity=narr_growth,
             catalyst_strength=context_data.get("catalyst_strength", 0.0),
-            liquidity_quality=50.0,
+            liquidity_quality=risk_profile.liquidity_score,
             risk_penalty=risk_penalty,
             cross_source_independence=graph_data["cross_source_independence"]
         )
@@ -102,7 +107,7 @@ class AlphaRadar:
                 why_now=f"Scored {signal.score.calibrated_score:.1f}/100",
                 evidence=ev_list,
                 earlyness=signal.earlyness_stage.value,
-                risk_flags=risk_flags,
+                risk_flags=risk_profile.flags,
                 sources=graph_data["sources"],
                 next_to_watch="Monitor network and wallet interactions.",
                 composite_score=signal.score.calibrated_score,
