@@ -3,23 +3,41 @@ from src.normalization.events import NormalizedEvent
 from src.utils.logger import logger
 
 class EvidenceFusion:
-    def fuse_signals(self, anchor_event: NormalizedEvent, supporting_events: List[NormalizedEvent]) -> Dict[str, Any]:
+    """
+    13. EVIDENCE FUSION
+    Constructs an evidence graph for an alert.
+    Requires events from independent sources to boost confidence.
+    """
+    def build_evidence_graph(self, anchor_event: NormalizedEvent, supporting_events: List[NormalizedEvent]) -> Dict[str, Any]:
         """
-        Combines multiple events into a single strong evidence profile.
-        Requires events from independent sources to boost confidence.
+        Combines multiple events into a structured graph.
+        Returns the graph and independence calculation.
         """
-        sources = set([anchor_event.source])
-        evidence = [f"Anchor ({anchor_event.source}): {anchor_event.raw_reference}"]
+        graph_nodes = []
+        unique_sources = set()
         
+        # Add Anchor
+        unique_sources.add(anchor_event.provenance.source_id)
+        graph_nodes.append({
+            "type": "anchor",
+            "source_type": anchor_event.provenance.source_type,
+            "description": f"{anchor_event.event_type} on {anchor_event.asset}"
+        })
+        
+        # Add Supporting
         for ev in supporting_events:
-            sources.add(ev.source)
-            evidence.append(f"Support ({ev.source}): {ev.raw_reference}")
+            unique_sources.add(ev.provenance.source_id)
+            graph_nodes.append({
+                "type": "support",
+                "source_type": ev.provenance.source_type,
+                "description": f"{ev.event_type} confirmed by {ev.provenance.source_id}"
+            })
             
-        confidence = "High" if len(sources) >= 3 else "Medium" if len(sources) == 2 else "Low"
+        cross_source_independence = 1.0 + (len(unique_sources) * 0.2) # Bonus for multiple unique sources
         
         return {
-            "is_fused": len(sources) > 1,
-            "unique_sources": list(sources),
-            "evidence_list": evidence,
-            "confidence": confidence
+            "graph_nodes": graph_nodes,
+            "unique_source_count": len(unique_sources),
+            "cross_source_independence": cross_source_independence,
+            "sources": list(unique_sources)
         }
