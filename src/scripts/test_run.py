@@ -1,7 +1,7 @@
 import asyncio
 import httpx
 from src.db.schema import init_db, async_session, EventModel
-from src.models.events import NormalizedEvent, Alert
+from src.normalization.events import NormalizedEvent, Alert
 from src.utils.logger import logger
 
 async def fetch_coingecko():
@@ -14,12 +14,16 @@ async def fetch_coingecko():
 
 async def persist_event(data):
     logger.info("Persisting normalized event...")
+    from src.normalization.events import Provenance
     event = NormalizedEvent(
         event_type="market_price",
         chain="multiple",
         asset="BTC/ETH/SOL",
-        source="coingecko",
-        raw_reference=f"cg_price_{asyncio.get_event_loop().time()}",
+        provenance=Provenance(
+            source_id="coingecko",
+            source_type="market",
+            raw_reference=f"cg_price_{asyncio.get_event_loop().time()}"
+        ),
         metadata=data
     )
     
@@ -28,9 +32,9 @@ async def persist_event(data):
             event_type=event.event_type,
             chain=event.chain,
             asset=event.asset,
-            timestamp=event.timestamp.replace(tzinfo=None),
-            source=event.source,
-            raw_reference=event.raw_reference,
+            timestamp=event.provenance.timestamp.replace(tzinfo=None),
+            source=event.provenance.source_id,
+            raw_reference=event.provenance.raw_reference,
             metadata_json=event.metadata
         )
         session.add(db_event)

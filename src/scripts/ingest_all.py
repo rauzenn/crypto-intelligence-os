@@ -1,5 +1,5 @@
 import asyncio
-from src.sources.registry import registry
+from src.ingestion.registry import registry
 from src.utils.logger import logger
 from src.db.schema import init_db, async_session, EventModel
 import json

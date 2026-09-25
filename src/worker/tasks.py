@@ -1,12 +1,9 @@
 import asyncio
 from src.utils.logger import logger
-from src.sources.registry import registry
+from src.ingestion.registry import registry
 from src.db.schema import init_db, async_session, EventModel
-from src.bot.telegram_service import send_alert
-from src.intelligence.alpha_radar import AlphaRadar
+from src.interface.telegram_service import send_alert
 from typing import Dict, Any
-
-radar = AlphaRadar()
 
 async def run_ingestion_cycle(ctx: Dict[str, Any]):
     """
@@ -35,28 +32,19 @@ async def run_ingestion_cycle(ctx: Dict[str, Any]):
                         event_type=event.event_type,
                         chain=event.chain,
                         asset=event.asset,
-                        timestamp=event.timestamp.replace(tzinfo=None),
-                        source=event.source,
-                        raw_reference=event.raw_reference,
+                        timestamp=event.provenance.timestamp.replace(tzinfo=None),
+                        source=event.provenance.source_id,
+                        raw_reference=event.provenance.raw_reference,
                         metadata_json=event.metadata
                     )
                     session.add(db_event)
                     
-                    # Run Intelligence Engine (Alpha Radar) on the event
-                    # Mock context data for now (in a real scenario, fetch historical stats from DB)
-                    context = {
-                        "avg_volume_24h": float(event.metadata.get("volume24h", 0) or 0) * 0.2, # Hack to simulate anomaly
-                        "social_mentions": 50,
-                        "supporting_events": []
-                    }
-                    
-                    alert = await radar.process_event(event, context)
-                    if alert:
-                        logger.info(f"ALPHA ALERT GENERATED: {alert.title}")
-                        await send_alert(alert.format_telegram())
+                    # C. EVENT BUS: Publish the normalized event to the stream
+                    from src.event_bus.bus import bus
+                    await bus.publish("events.normalized", event.to_dict())
 
                 await session.commit()
-                logger.info(f"Persisted and analyzed {len(events)} events from {adapter.name}")
+                logger.info(f"Persisted and published {len(events)} events from {adapter.name}")
                 
         except Exception as e:
             logger.error(f"Error in ingestion cycle for {adapter.name}: {e}")
@@ -71,7 +59,11 @@ async def run_wallet_hunter_cycle(ctx: Dict[str, Any]):
 async def startup(ctx: Dict[str, Any]):
     logger.info("Worker starting up. Initializing DB and resources...")
     await init_db()
+    from src.detection.listener import setup_detection_listeners
+    setup_detection_listeners()
 
 async def shutdown(ctx: Dict[str, Any]):
     logger.info("Worker shutting down. Cleaning up...")
     await registry.close_all()
+    from src.event_bus.bus import bus
+    await bus.close()
