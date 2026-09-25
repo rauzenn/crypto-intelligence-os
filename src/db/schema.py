@@ -48,6 +48,24 @@ class AlertOutcomeModel(Base):
     is_false_positive = Column(String, nullable=True) # "true", "false", or "pending"
     recorded_at = Column(DateTime, default=get_utc_now)
 
+class WalletModel(Base):
+    """
+    Persisted Wallet Entities for Wallet Hunter 2.0 and Memory Layer.
+    """
+    __tablename__ = "wallets"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    address = Column(String, unique=True, index=True, nullable=False)
+    chain = Column(String)
+    lifecycle_state = Column(String) # CANDIDATE, WATCHED, HIGH_SIGNAL
+    reputation_score = Column(String, default="0.0") # Use String for simpler sqlite compat if needed, or Float. Using Float for postgres.
+    confidence = Column(String, default="LOW")
+    win_rate = Column(String, default="0.0")
+    sample_size = Column(Integer, default=0)
+    cluster_id = Column(String, nullable=True)
+    last_active = Column(DateTime, default=get_utc_now)
+    created_at = Column(DateTime, default=get_utc_now)
+
 engine = create_async_engine(settings.DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 

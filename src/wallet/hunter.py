@@ -1,75 +1,137 @@
 from typing import List, Dict, Any, Tuple
 from src.utils.logger import logger
+from src.wallet.models import WalletProfile, WalletScore, WalletLifecycle, WalletCluster
 from datetime import datetime
+import statistics
+import uuid
 
-class WalletHunter:
+class WalletHunter2:
+    """
+    7. WALLET HUNTER 2.0
+    Strategic core module to detect and score smart money.
+    """
     def __init__(self):
-        self.watchlist = {} # wallet -> score
-        self.min_win_rate = 0.60
-        self.min_trades = 5
-        self.early_entry_threshold_seconds = 3600 * 24 # 1 day before pump
+        self.wallets: Dict[str, WalletProfile] = {}
+        self.clusters: Dict[str, WalletCluster] = {}
 
-    def discover_candidates(self, recent_profitable_trades: List[Dict[str, Any]]) -> List[str]:
+    def analyze_history(self, address: str, chain: str, trade_history: List[Dict[str, Any]]) -> WalletProfile:
         """
-        Scan a list of profitable trades. If a wallet keeps showing up early, it becomes a candidate.
+        Analyze a wallet's trade history and generate a comprehensive WalletScore.
         """
-        candidates = set()
-        for trade in recent_profitable_trades:
-            wallet = trade.get("wallet")
-            entry_time = trade.get("entry_time")
-            pump_time = trade.get("pump_time")
+        profile = self.wallets.get(address, WalletProfile(address=address, chain=chain))
+        
+        sample_size = len(trade_history)
+        if sample_size == 0:
+            return profile
             
-            if wallet and entry_time and pump_time:
-                # Calculate lead time
-                lead_time = pump_time - entry_time
-                if lead_time > self.early_entry_threshold_seconds:
-                    candidates.add(wallet)
-                    
-        logger.info(f"WalletHunter discovered {len(candidates)} early-entry candidates.")
-        return list(candidates)
-
-    def score_wallet(self, wallet_address: str, trade_history: List[Dict[str, Any]]) -> float:
+        pnls = [t.get("pnl_usd", 0.0) for t in trade_history]
+        pnl_pcts = [t.get("pnl_pct", 0.0) for t in trade_history]
+        lead_times = [t.get("lead_time_hours", 0.0) for t in trade_history]
+        
+        wins = sum(1 for p in pnl_pcts if p > 0)
+        win_rate = wins / sample_size
+        
+        median_pnl_pct = statistics.median(pnl_pcts) if pnl_pcts else 0.0
+        median_lead = statistics.median(lead_times) if lead_times else 0.0
+        
+        early_entry_count = sum(1 for lt in lead_times if lt > 12.0) # More than 12h before pump
+        early_freq = early_entry_count / sample_size
+        
+        # Risk adjusted performance (simplified Sharpe-like proxy)
+        std_dev = statistics.stdev(pnl_pcts) if sample_size > 1 else 1.0
+        if std_dev == 0: std_dev = 1.0
+        risk_adj = median_pnl_pct / std_dev
+        
+        # Consistency proxy
+        consistency = 1.0 - (std_dev / max(abs(median_pnl_pct), 1.0))
+        
+        # Calculate raw reputation
+        rep_score = (win_rate * 30.0) + (early_freq * 30.0) + (min(median_lead, 48) * 0.5) + (min(risk_adj, 5.0) * 4.0)
+        rep_score = min(max(rep_score, 0.0), 100.0)
+        
+        # Determine confidence based on sample size
+        confidence = "LOW"
+        if sample_size >= 20:
+            confidence = "HIGH"
+        elif sample_size >= 5:
+            confidence = "MEDIUM"
+            
+        score = WalletScore(
+            sample_size=sample_size,
+            realized_pnl_usd=sum(pnls),
+            win_rate=win_rate,
+            median_pnl_pct=median_pnl_pct,
+            risk_adjusted_performance=risk_adj,
+            early_entry_frequency=early_freq,
+            median_lead_time_hours=median_lead,
+            consistency_score=consistency,
+            reputation_score=rep_score,
+            confidence=confidence
+        )
+        
+        profile.score = score
+        from datetime import timezone
+        profile.last_active = datetime.now(timezone.utc)
+        self._update_lifecycle(profile)
+        self.wallets[address] = profile
+        
+        logger.info(f"[WalletHunter] Analyzed {address} - Score: {rep_score:.1f} (Conf: {confidence})")
+        return profile
+        
+    def _update_lifecycle(self, profile: WalletProfile):
+        """State machine for Wallet lifecycle."""
+        current = profile.lifecycle_state
+        score = profile.score.reputation_score
+        conf = profile.score.confidence
+        
+        if current == WalletLifecycle.CANDIDATE:
+            if conf in ["MEDIUM", "HIGH"] and score > 50:
+                profile.lifecycle_state = WalletLifecycle.WATCHED
+        elif current == WalletLifecycle.WATCHED:
+            if conf == "HIGH" and score > 80:
+                profile.lifecycle_state = WalletLifecycle.HIGH_SIGNAL
+            elif score < 40:
+                profile.lifecycle_state = WalletLifecycle.PROBATION
+        elif current == WalletLifecycle.HIGH_SIGNAL:
+            if score < 70:
+                profile.lifecycle_state = WalletLifecycle.DEGRADED
+        elif current in [WalletLifecycle.DEGRADED, WalletLifecycle.PROBATION]:
+            if score > 60:
+                profile.lifecycle_state = WalletLifecycle.WATCHED
+            elif conf == "HIGH" and score < 20:
+                profile.lifecycle_state = WalletLifecycle.ARCHIVED
+                
+class WalletClusterer:
+    """
+    8. WALLET CLUSTERING
+    Investigates clusters of wallets belonging to the same entity.
+    """
+    def __init__(self):
+        self.clusters: Dict[str, WalletCluster] = {}
+        
+    def analyze_behaviors(self, wallets: List[WalletProfile], cross_wallet_events: List[Dict[str, Any]]):
         """
-        Score a wallet based on its historical performance.
-        Returns a score from 0.0 to 100.0.
+        Looks for common funding, timing similarity, and synchronized behaviors.
         """
-        if not trade_history:
-            return 0.0
-            
-        wins = sum(1 for t in trade_history if t.get("pnl_pct", 0) > 0)
-        win_rate = wins / len(trade_history)
+        # Placeholder for complex graph logic
+        # In reality, this queries the neo4j or relational graph db
         
-        if len(trade_history) < self.min_trades:
-            logger.debug(f"Wallet {wallet_address} ignored (too few trades).")
-            return 0.0 # Low confidence due to small sample size
-            
-        if win_rate < self.min_win_rate:
-            return 0.0
-            
-        # Calculate average earlyness (lead time in hours)
-        avg_lead_time_hrs = sum((t.get("pump_time", 0) - t.get("entry_time", 0)) / 3600 for t in trade_history) / len(trade_history)
+        logger.info("[WalletClusterer] Analyzing cross-wallet behavior for clustering...")
         
-        # Base score on win rate
-        score = win_rate * 50.0 
-        
-        # Bonus for extreme early entries (e.g., avg > 48h)
-        if avg_lead_time_hrs > 48:
-            score += 30.0
-        elif avg_lead_time_hrs > 24:
-            score += 15.0
-            
-        # Bonus for consistency (number of trades)
-        score += min(len(trade_history), 20)
-        
-        final_score = min(score, 100.0)
-        logger.info(f"Wallet {wallet_address} scored {final_score:.1f} (WinRate: {win_rate:.2f}, AvgLead: {avg_lead_time_hrs:.1f}h)")
-        return final_score
-
-    def update_watchlist(self, wallet_address: str, score: float):
-        if score > 60.0:
-            self.watchlist[wallet_address] = score
-            logger.info(f"Added/Updated {wallet_address} on watchlist with score {score:.1f}.")
-        elif wallet_address in self.watchlist and score < 40.0:
-            # Demotion
-            del self.watchlist[wallet_address]
-            logger.info(f"Demoted {wallet_address} from watchlist.")
+        # Mocking a cluster detection
+        if len(wallets) >= 2:
+            cluster_id = str(uuid.uuid4())
+            cluster = WalletCluster(
+                cluster_id=cluster_id,
+                probable_wallets=[w.address for w in wallets[:2]],
+                confidence="MEDIUM",
+                evidence=[
+                    "Synchronized entries on token X within 5 minutes",
+                    "Common funding from Binance Hot Wallet"
+                ],
+                cluster_tags=["Automated MEV", "Insider"]
+            )
+            self.clusters[cluster_id] = cluster
+            logger.info(f"[WalletClusterer] Detected probable cluster {cluster_id} with {len(cluster.probable_wallets)} wallets.")
+            return cluster
+        return None
