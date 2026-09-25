@@ -12,13 +12,15 @@ dp = Dispatcher()
 
 @dp.message(Command("start"))
 async def cmd_start(message: types.Message):
+    chat_id = message.chat.id
     welcome_text = (
-        "🤖 *JARVIS Intelligence OS*\n\n"
-        "Commands:\n"
-        "/alpha - Latest detected alpha signals\n"
-        "/wallets - Top smart money wallets\n"
-        "/narratives - Current market narratives\n"
-        "/status - System health and metrics"
+        f"🤖 *JARVIS Intelligence OS*\n\n"
+        f"Your Chat ID: `{chat_id}` (Add this to TELEGRAM_CHAT_ID in .env for automated push alerts)\n\n"
+        f"Commands:\n"
+        f"/alpha - Latest detected alpha signals\n"
+        f"/wallets - Top smart money wallets\n"
+        f"/narratives - Current market narratives\n"
+        f"/status - System health and metrics"
     )
     await message.answer(welcome_text, parse_mode="Markdown")
 
@@ -89,6 +91,18 @@ async def cmd_narratives(message: types.Message):
 @dp.message(Command("status"))
 async def cmd_status(message: types.Message):
     await message.answer("✅ *JARVIS Systems Online*\n\n- Ingestion: Active\n- Event Bus: Active\n- Alpha Radar 2.0: Active\n- Wallet Hunter 2.0: Active\n- Risk Engine 2.0: Active", parse_mode="Markdown")
+
+@dp.message(Command("coin"))
+async def cmd_coin(message: types.Message):
+    args = message.text.split(maxsplit=1)
+    if len(args) < 2:
+        await message.answer("Please provide a coin symbol or address. Usage: /coin <symbol>")
+        return
+        
+    from src.research.engine import ResearchEngine
+    engine = ResearchEngine()
+    report = await engine.generate_report(args[1])
+    await message.answer(report, parse_mode="Markdown")
 
 async def start_bot():
     if not bot:
