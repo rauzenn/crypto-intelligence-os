@@ -143,7 +143,7 @@ with tab_learning:
             return f'background-color: {color}'
             
         st.dataframe(
-            outcomes_df[['alert_id', 'snapshot_time', 'price_at_alert', 'price_at_snapshot', 'pnl_pct', 'is_false_positive', 'recorded_at']].style.applymap(highlight_fp, subset=['is_false_positive']),
+            outcomes_df[['alert_id', 'snapshot_time', 'price_at_alert', 'price_at_snapshot', 'pnl_pct', 'is_false_positive', 'recorded_at']].style.map(highlight_fp, subset=['is_false_positive']),
             use_container_width=True
         )
     else:
