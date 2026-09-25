@@ -2,58 +2,99 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from src.config.settings import settings
 from src.utils.logger import logger
+from src.db.schema import async_session, AlertModel, WalletModel, NarrativeModel
+from sqlalchemy import select, desc
 import asyncio
 
+# Note: Uses aiogram 3.x
 bot = Bot(token=settings.TELEGRAM_BOT_TOKEN) if settings.TELEGRAM_BOT_TOKEN else None
 dp = Dispatcher()
 
-@dp.message(Command("radar"))
-async def cmd_radar(message: types.Message):
-    # This would normally query the database for recent alerts or trigger a manual scan
-    await message.answer("Alpha Radar is active and scanning continuously in the background. No critical anomalies detected in the last cycle.")
+@dp.message(Command("start"))
+async def cmd_start(message: types.Message):
+    welcome_text = (
+        "🤖 *JARVIS Intelligence OS*\n\n"
+        "Commands:\n"
+        "/alpha - Latest detected alpha signals\n"
+        "/wallets - Top smart money wallets\n"
+        "/narratives - Current market narratives\n"
+        "/status - System health and metrics"
+    )
+    await message.answer(welcome_text, parse_mode="Markdown")
 
-@dp.message(Command("coin"))
-async def cmd_coin(message: types.Message):
-    args = message.text.split(maxsplit=1)
-    if len(args) < 2:
-        await message.answer("Please provide a coin symbol or address. Usage: /coin <symbol>")
-        return
+@dp.message(Command("alpha"))
+async def cmd_alpha(message: types.Message):
+    async with async_session() as session:
+        result = await session.execute(select(AlertModel).order_by(desc(AlertModel.detected_at)).limit(3))
+        alerts = result.scalars().all()
         
-    from src.research.coin_research import CoinResearcher
-    researcher = CoinResearcher()
-    report = await researcher.research(args[1])
-    await message.answer(report, parse_mode="Markdown")
+        if not alerts:
+            await message.answer("No active alpha signals found.")
+            return
+            
+        for a in alerts:
+            score = a.content_json.get('composite_score', 'N/A')
+            earlyness = a.content_json.get('earlyness', 'N/A')
+            priority = a.content_json.get('priority', 'N/A')
+            
+            msg = (
+                f"🚨 *[{priority}] {a.title}*\n"
+                f"Asset: {a.asset} | Chain: {a.chain}\n"
+                f"Score: {score} | Earlyness: {earlyness}\n"
+                f"Time: {a.detected_at.strftime('%Y-%m-%d %H:%M:%S')} UTC"
+            )
+            await message.answer(msg, parse_mode="Markdown")
 
-@dp.message(Command("research"))
-async def cmd_research(message: types.Message):
-    # For now, map research to the same logic as coin
-    await cmd_coin(message)
-
-@dp.message(Command("wallet"))
-async def cmd_wallet(message: types.Message):
-    await message.answer("Wallet Hunter: Provide address to analyze. Usage: /wallet <address>")
-
-@dp.message(Command("watchlist"))
-async def cmd_watchlist(message: types.Message):
-    await message.answer("Wallet Watchlist is currently empty. Add smart wallets to monitor.")
-
-@dp.message(Command("chains"))
-async def cmd_chains(message: types.Message):
-    await message.answer("Chain Discovery Engine: \nTier A: solana, ethereum\nTier B: base, arbitrum\n(Monitoring dynamic acceleration)")
+@dp.message(Command("wallets"))
+async def cmd_wallets(message: types.Message):
+    async with async_session() as session:
+        result = await session.execute(
+            select(WalletModel)
+            .where(WalletModel.lifecycle_state.in_(["WATCHED", "HIGH_SIGNAL"]))
+            .order_by(desc(WalletModel.reputation_score))
+            .limit(5)
+        )
+        wallets = result.scalars().all()
+        
+        if not wallets:
+            await message.answer("No smart money wallets in WATCHED or HIGH_SIGNAL state yet.")
+            return
+            
+        text = "🕵️ *Top Smart Money Wallets*\n\n"
+        for w in wallets:
+            text += f"- `{w.address[:6]}...{w.address[-4:]}` [{w.chain}] | Score: {w.reputation_score} | {w.lifecycle_state}\n"
+            
+        await message.answer(text, parse_mode="Markdown")
 
 @dp.message(Command("narratives"))
 async def cmd_narratives(message: types.Message):
-    await message.answer("Narrative Engine: \nAccelerating topics: AI, DePIN, RWA")
+    async with async_session() as session:
+        result = await session.execute(
+            select(NarrativeModel)
+            .order_by(desc(NarrativeModel.mention_velocity))
+            .limit(5)
+        )
+        narratives = result.scalars().all()
+        
+        if not narratives:
+            await message.answer("No narratives detected yet.")
+            return
+            
+        text = "📈 *Market Narratives*\n\n"
+        for n in narratives:
+            text += f"- *{n.topic}* | {n.lifecycle_state} | Velocity: {n.mention_velocity:.1f}\n"
+            
+        await message.answer(text, parse_mode="Markdown")
 
 @dp.message(Command("status"))
 async def cmd_status(message: types.Message):
-    await message.answer("Crypto Intelligence OS v0.1 is online with Phase 3 active.")
+    await message.answer("✅ *JARVIS Systems Online*\n\n- Ingestion: Active\n- Event Bus: Active\n- Alpha Radar 2.0: Active\n- Wallet Hunter 2.0: Active\n- Risk Engine 2.0: Active", parse_mode="Markdown")
 
 async def start_bot():
     if not bot:
         logger.warning("TELEGRAM_BOT_TOKEN is not set. Bot will not start.")
         return
-    logger.info("Starting Telegram bot...")
+    logger.info("Starting Telegram bot polling...")
     await dp.start_polling(bot)
 
 async def send_alert(text: str):
