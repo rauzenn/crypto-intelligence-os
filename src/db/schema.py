@@ -1,6 +1,6 @@
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import declarative_base
-from sqlalchemy import Column, Integer, String, DateTime, JSON, Text
+from sqlalchemy import Column, Integer, String, DateTime, JSON, Text, Float
 from datetime import datetime, timezone
 import os
 from src.config.settings import settings
@@ -65,6 +65,20 @@ class WalletModel(Base):
     cluster_id = Column(String, nullable=True)
     last_active = Column(DateTime, default=get_utc_now)
     created_at = Column(DateTime, default=get_utc_now)
+
+class NarrativeModel(Base):
+    """
+    Persisted Narrative Entities.
+    """
+    __tablename__ = "narratives"
+    
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    topic = Column(String, unique=True, index=True, nullable=False)
+    lifecycle_state = Column(String) # EMERGENCE, ACCELERATION, etc.
+    mention_velocity = Column(Float, default=0.0)
+    capital_flow_usd = Column(Float, default=0.0)
+    confidence_score = Column(Float, default=0.0)
+    last_updated = Column(DateTime, default=get_utc_now)
 
 engine = create_async_engine(settings.DATABASE_URL, echo=False)
 async_session = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)

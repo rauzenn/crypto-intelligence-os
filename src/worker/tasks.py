@@ -63,6 +63,8 @@ async def startup(ctx: Dict[str, Any]):
     setup_detection_listeners()
     from src.wallet.listener import setup_wallet_listeners
     setup_wallet_listeners()
+    from src.narrative.listener import setup_narrative_listeners
+    setup_narrative_listeners()
 
 async def shutdown(ctx: Dict[str, Any]):
     logger.info("Worker shutting down. Cleaning up...")
